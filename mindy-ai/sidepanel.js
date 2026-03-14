@@ -73,6 +73,16 @@ function appendAssistantLoadingPlaceholder(parentEl) {
   return div;
 }
 
+/** Converts AI response to HTML: **bold** and *italic* → formatted, no raw asterisks */
+function formatAiResponse(text) {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/\n/g, '<br>');
+}
+
 // ---------- API Key & Model (stored in chrome.storage.local only) ----------
 async function loadSettings() {
   const { mindyApiKey, mindyModel } = await chrome.storage.local.get(['mindyApiKey', 'mindyModel']);
@@ -141,7 +151,7 @@ function formatTimestamp(seconds) {
 function appendYouTubeMessage(role, text) {
   const div = document.createElement('div');
   div.className = role === 'user' ? 'mindy-msg mindy-msg--user' : 'mindy-msg mindy-msg--assistant';
-  div.innerHTML = (text || '').replace(/\n/g, '<br>');
+  div.innerHTML = role === 'assistant' ? formatAiResponse(text) : (text || '').replace(/\n/g, '<br>');
   ELEMENTS.youtubeResult.appendChild(div);
   ELEMENTS.youtubeResult.scrollTop = ELEMENTS.youtubeResult.scrollHeight;
 }
@@ -266,7 +276,7 @@ function cropImage(dataUrl, topPercent = 0.15, sidePercent = 0.05) {
 function appendVisionMessage(role, text) {
   const div = document.createElement('div');
   div.className = role === 'user' ? 'mindy-msg mindy-msg--user' : 'mindy-msg mindy-msg--assistant';
-  div.innerHTML = (text || '').replace(/\n/g, '<br>');
+  div.innerHTML = role === 'assistant' ? formatAiResponse(text) : (text || '').replace(/\n/g, '<br>');
   ELEMENTS.visionChatMessages?.appendChild(div);
   ELEMENTS.visionChatMessages.scrollTop = ELEMENTS.visionChatMessages.scrollHeight;
 }
@@ -325,7 +335,7 @@ ELEMENTS.captureVision.addEventListener('click', async () => {
       return;
     }
     lastVisionAnalysis = analysisRes.text;
-    ELEMENTS.visionResult.innerHTML = `<div class="mindy-ai-response">${(analysisRes.text || '').replace(/\n/g, '<br>')}</div>`;
+    ELEMENTS.visionResult.innerHTML = `<div class="mindy-ai-response">${formatAiResponse(analysisRes.text || '')}</div>`;
     ELEMENTS.visionResult.classList.remove('hidden');
     ELEMENTS.visionChatArea?.classList.remove('hidden');
     ELEMENTS.visionChatMessages.innerHTML = '';
@@ -386,7 +396,7 @@ function updateJargonUI(status, result) {
   } else if (result) {
     hideMindyThinking();
     ELEMENTS.jargonResult.classList.remove('hidden');
-    ELEMENTS.jargonText.textContent = result;
+    ELEMENTS.jargonText.innerHTML = formatAiResponse(result);
     ELEMENTS.jargonText.classList.toggle('text-red-400', result.startsWith('Error:'));
     ELEMENTS.jargonText.classList.toggle('text-slate-300', !result.startsWith('Error:'));
     ELEMENTS.jargonText.classList.remove('italic', 'text-slate-400');
@@ -444,6 +454,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
   }
 });
+
+// ---------- Format AI response: convert markdown so * and ** don't show as raw characters ----------
+function formatAiResponse(text) {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/\n/g, '<br>');
+}
 
 // ---------- 4. Blueprint Vision (image → detailed guide) ----------
 function simpleMarkdownToHtml(md) {
