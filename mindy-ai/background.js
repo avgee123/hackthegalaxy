@@ -39,6 +39,9 @@ async function callGeminiText(apiKey, prompt, options = {}) {
       temperature: options.temperature ?? 0.7,
     },
   };
+  if (options.useGoogleSearch) {
+    body.tools = [{ google_search: {} }];
+  }
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -55,9 +58,10 @@ async function callGeminiText(apiKey, prompt, options = {}) {
   return text;
 }
 
-const VISION_SYSTEM_PROMPT = `You are an expert visual analyst. IGNORE all browser UI, address bars, tabs, headers, and ads. Look ONLY at the center main content. If this is a search result page, find the specific technical answer in the snippet and explain the logic behind it—not just what the text says. Analyze relationships between concepts mentioned. Do NOT describe "Google Search Interface" or the top bar. Focus on the core value and what matters to the user.`;
+const VISION_SYSTEM_PROMPT = `Visual analyst. IGNORE browser UI, ads, headers. Focus on center content only.
+Be concise: 2–3 short paragraphs max. For search results: extract the answer and logic—don't restate. Never describe the address bar. Keep response under 200 words.`;
 
-async function callGeminiVision(apiKey, imageDataUrl, prompt, model) {
+async function callGeminiVision(apiKey, imageDataUrl, prompt, model, options = {}) {
   const m = model || 'gemini-2.0-flash';
   const url = `${GEMINI_BASE}/models/${m}:generateContent?key=${apiKey}`;
   const base64Data = imageDataUrl.replace(/^data:image\/\w+;base64,/, '');
@@ -78,8 +82,8 @@ async function callGeminiVision(apiKey, imageDataUrl, prompt, model) {
       ],
     }],
     generationConfig: {
-      maxOutputTokens: 1024,
-      temperature: 0.4,
+      maxOutputTokens: options.maxOutputTokens ?? 1024,
+      temperature: options.temperature ?? 0.4,
     },
   };
   const res = await fetch(url, {
@@ -98,6 +102,35 @@ async function callGeminiVision(apiKey, imageDataUrl, prompt, model) {
   return text;
 }
 
+const IMAGE_MODEL = 'gemini-3.1-flash-image-preview';
+
+async function callGeminiImageGeneration(apiKey, prompt) {
+  const url = `${GEMINI_BASE}/models/${IMAGE_MODEL}:generateContent?key=${apiKey}`;
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: {},
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const resText = await res.text();
+  if (!res.ok) {
+    const friendly = parseGeminiError(resText, res.status);
+    throw new Error(friendly || resText || `Gemini image API error: ${res.status}`);
+  }
+  const data = JSON.parse(resText);
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  for (const part of parts) {
+    if (part.inlineData?.data) {
+      const mime = part.inlineData.mimeType || 'image/png';
+      return `data:${mime};base64,${part.inlineData.data}`;
+    }
+  }
+  throw new Error('No image in Gemini response');
+}
+
 async function callGeminiVisionChat(apiKey, imageDataUrl, history, question, model) {
   const m = model || 'gemini-2.0-flash';
   const url = `${GEMINI_BASE}/models/${m}:generateContent?key=${apiKey}`;
@@ -105,10 +138,17 @@ async function callGeminiVisionChat(apiKey, imageDataUrl, history, question, mod
   const mimeMatch = imageDataUrl.match(/^data:(image\/\w+);base64,/);
   const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
 
+  const visionChatPrompt = `Analyze this image. Answer follow-up questions.
+
+RULES:
+1. If the answer IS in the image: answer directly from what you see.
+2. If the answer is NOT in the image: use Google Search to find relevant sources. Start your response with "While not explicitly shown in the image, ..." then give the answer from your research.
+3. Always be clear when you're going beyond the image vs. reading from it.`;
+
   const contents = [{
     role: 'user',
     parts: [
-      { text: `${VISION_SYSTEM_PROMPT}\n\nAnalyze this screenshot. Answer the user's follow-up questions based on the image.` },
+      { text: visionChatPrompt },
       { inlineData: { mimeType, data: base64Data } },
     ],
   }];
@@ -122,6 +162,7 @@ async function callGeminiVisionChat(apiKey, imageDataUrl, history, question, mod
 
   const body = {
     contents,
+    tools: [{ google_search: {} }],
     generationConfig: { maxOutputTokens: 1024, temperature: 0.4 },
   };
 
@@ -151,15 +192,15 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId !== 'jargon-crusher' || !info.selectionText?.trim()) return;
-  const text = info.selectionText.trim();
-  // Store text for side panel to process - side panel makes the API call
-  // (service worker can be killed mid-request, causing "Simplifying..." to hang)
+  const text = info.selectionText?.trim();
+  if (!text) return;
   if (tab?.id) await chrome.sidePanel.open({ tabId: tab.id });
-  await chrome.storage.local.set({
-    mindyJargonPending: text,
-    mindyJargonStatus: 'thinking',
-  });
+  if (info.menuItemId === 'jargon-crusher') {
+    await chrome.storage.local.set({
+      mindyJargonPending: text,
+      mindyJargonStatus: 'thinking',
+    });
+  }
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -323,7 +364,7 @@ Only output the 3 timestamp lines, no extra explanation.`;
 
       case 'gemini-vision': {
         try {
-          const text = await callGeminiVision(apiKey, msg.imageDataUrl, msg.prompt, model);
+          const text = await callGeminiVision(apiKey, msg.imageDataUrl, msg.prompt, model, { maxOutputTokens: 512 });
           return { text };
         } catch (e) {
           return { error: e.message || 'Gemini vision request failed' };
@@ -367,29 +408,49 @@ Answer the question based ONLY on this video context. Do NOT guess other topics.
 
       case 'gemini-jargon': {
         try {
-          const prompt = `Simplify this complex text into a 1-sentence analogy that a child can understand. Output only the analogy, nothing else:\n\n${msg.text}`;
-          const text = await callGeminiText(apiKey, prompt, { model, maxTokens: 256 });
+          const prompt = `You are a clarity expert. The user selected this text: "${msg.text}"
+
+TASK: Explain what it means in plain language—1 or 2 short sentences. Use Google Search to find the REAL, current definition for:
+- Slang, jargon, memes, internet terms
+- Technical terms (coding, medicine, law, etc.)
+- Acronyms and abbreviations
+- Domain-specific vocabulary
+
+Base your answer on authoritative sources and common usage. Do NOT invent definitions. If you cannot find it, say "I couldn't find a reliable definition for this."
+Output ONLY the explanation, nothing else.`;
+          const text = await callGeminiText(apiKey, prompt, { model, maxTokens: 512, useGoogleSearch: true });
           return { text };
         } catch (e) {
           return { error: e.message || 'Jargon Crusher failed' };
         }
       }
 
-      case 'gemini-action-extractor': {
+      case 'gemini-blueprint-vision': {
+        const blueprintPrompt = `Act as a Master Specialist. Analyze this image carefully.
+
+- If it shows a PROBLEM (broken thing, malfunction): give a detailed REPAIR GUIDE.
+- If it shows a RECIPE or food: give detailed COOKING STEPS with exact temps, times, measurements.
+- If it shows a PROJECT (craft, DIY, diagram): give a detailed WORKFLOW.
+
+CRITICAL: Be EXTREMELY DETAILED. Never say "Bake it"—say "Bake at 425°F for 15 minutes, then reduce to 350°F for 45 minutes." Include specific numbers, temperatures, times, quantities, tool names.
+
+IMPORTANT: You MUST include ALL three sections below. Do NOT truncate or stop after Diagnosis. The Step-by-Step Checklist is REQUIRED—provide at least 5-10 detailed bullet points. Always include Expert References.
+
+Format your response in Markdown with these exact sections:
+
+## Diagnosis/Summary
+(Brief: What is in the image)
+
+## Step-by-Step Checklist
+(Detailed actionable items with bullet points. Be specific! At least 5-10 steps.)
+
+## Expert References
+Provide 3-5 clickable links. ONLY use YouTube search URLs—never direct video URLs. Format each as: [Descriptive text](https://www.youtube.com/results?search_query=encoded+search+terms). Example: [Watch: how to crimp pie crust](https://www.youtube.com/results?search_query=how+to+crimp+pie+crust+expert+tips)`;
         try {
-          const fallbackNote = msg.hasTranscript
-            ? ''
-            : ' (Transcript missing. Use the title and description to infer steps from the video topic.)';
-          const prompt = `You are an expert project manager. Extract actionable tasks/steps that a user would actually DO—from a video tutorial, article, or document. The raw content below may contain UI noise (menus, toolbars, "File Edit View", document titles). FILTER THAT OUT. Extract ONLY from the substantive body.
-
-BAD (never output): "Locate the transcript", "Provide the URL", "Rename the document", "Review File/Edit/View menus", "Utilize editing tools"—these are meta/UI, not real tasks.
-GOOD: actual steps from the content—e.g. "Add flour to bowl", "Press the button", "Wait 5 minutes".
-
-Rules: Format each item as "- [ ]". Chronological order for tutorials.${msg.isYouTube ? ' Input is YouTube transcript.' : ''}${fallbackNote} If no clear actions, suggest 3 concrete next steps. Output ONLY the checklist.\n\n${msg.text}`;
-          const text = await callGeminiText(apiKey, prompt, { model, maxTokens: 1024 });
+          const text = await callGeminiVision(apiKey, msg.imageDataUrl, blueprintPrompt, model, { maxOutputTokens: 8192 });
           return { text };
         } catch (e) {
-          return { error: e.message || 'Action Extractor failed' };
+          return { error: e.message || 'Blueprint Vision failed' };
         }
       }
 

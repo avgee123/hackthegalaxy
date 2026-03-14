@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>Mindy AI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body class="mindy-body">
+  <div class="mindy-panel">
+    <!-- Header -->
+    <header class="mindy-header">
+      <div class="mindy-logo">
+        <span class="mindy-logo-icon">✦</span>
+        <div>
+          <h1>Mindy AI</h1>
+          <p>Your page-aware assistant</p>
+        </div>
+      </div>
+    </header>
+
+    <!-- API Key Card -->
+    <section class="mindy-card mindy-card--settings">
+      <h3 class="mindy-card-title">
+        <span class="mindy-icon">🔑</span>
+        Setup
+      </h3>
+      <label class="mindy-label">Gemini API Key</label>
+      <input id="apiKeyInput" type="password" placeholder="Paste your API key here" class="mindy-input" />
+      <button id="saveApiKey" class="mindy-btn mindy-btn--primary">Save Key</button>
+      <p id="apiKeyStatus" class="mindy-status hidden"></p>
+      <label class="mindy-label mindy-label--mt">Model</label>
+      <select id="modelSelect" class="mindy-input mindy-select">
+        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+        <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+        <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+        <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+      </select>
+      <p class="mindy-hint">Switch model if you hit quota limits</p>
+    </section>
+
+    <!-- Mindy is Thinking -->
+    <div id="mindyThinking" class="mindy-thinking hidden">
+      <span class="mindy-thinking-dot"></span>
+      <span id="mindyThinkingText">Mindy is thinking...</span>
+    </div>
+
+    <!-- 1. YouTube Context -->
+    <section class="mindy-card">
+      <h3 class="mindy-card-title">
+        <span class="mindy-icon">▶️</span>
+        YouTube Context
+      </h3>
+      <p class="mindy-desc">Ask about the video at current timestamp</p>
+      <div class="mindy-input-row">
+        <input id="youtubeChatInput" type="text" placeholder="What's being explained here?" class="mindy-input mindy-input--flex" />
+        <button id="youtubeChatSend" class="mindy-btn mindy-btn--primary mindy-btn--icon">Ask</button>
+      </div>
+      <p id="youtubeStatus" class="mindy-status"></p>
+      <div id="youtubeResult" class="mindy-chat-area"></div>
+    </section>
+
+    <!-- 2. Visual Deep-Dive -->
+    <section class="mindy-card">
+      <h3 class="mindy-card-title">
+        <span class="mindy-icon">🖼️</span>
+        Visual Deep-Dive
+      </h3>
+      <p class="mindy-desc">Capture screen & get AI analysis</p>
+      <button id="captureVision" class="mindy-btn mindy-btn--secondary mindy-btn--full">
+        <span>Capture & Explain</span>
+      </button>
+      <p id="visionStatus" class="mindy-status"></p>
+      <div id="visionResult" class="mindy-result-box hidden"></div>
+      <div id="visionChatArea" class="mindy-chat-followup hidden">
+        <div id="visionChatMessages" class="mindy-chat-area mindy-chat-area--sm mb-3"></div>
+        <div class="mindy-input-row">
+          <input id="visionChatInput" type="text" placeholder="Ask follow-up..." class="mindy-input mindy-input--flex" />
+          <button id="visionChatSend" class="mindy-btn mindy-btn--primary mindy-btn--icon">Send</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Jargon Crusher -->
+    <section class="mindy-card">
+      <h3 class="mindy-card-title">
+        <span class="mindy-icon">💬</span>
+        Jargon Crusher
+      </h3>
+      <p class="mindy-desc">Select text → Right-click → <strong>Simplify with Jargon Crusher</strong></p>
+      <div id="jargonResult" class="mindy-result-box mindy-result-box--jargon hidden">
+        <p id="jargonText" class="mindy-jargon-text"></p>
+      </div>
+    </section>
+
+    <!-- 4. Blueprint Vision -->
+    <section class="mindy-card">
+      <h3 class="mindy-card-title">
+        <span class="mindy-icon">📋</span>
+        Blueprint Vision
+      </h3>
+      <p class="mindy-desc">Get a step-by-step guide from any image</p>
+      <div class="mindy-btn-row">
+        <input type="file" id="blueprintFileInput" accept="image/*" class="hidden" />
+        <button id="blueprintUpload" class="mindy-btn mindy-btn--secondary mindy-btn--half">Upload</button>
+        <button id="blueprintCapture" class="mindy-btn mindy-btn--secondary mindy-btn--half">Capture</button>
+      </div>
+      <p id="blueprintStatus" class="mindy-status"></p>
+      <div id="blueprintResult" class="mindy-blueprint-result hidden">
+        <div id="blueprintSteps" class="mindy-blueprint-steps"></div>
+        <div id="blueprintRefs" class="mindy-blueprint-refs">
+          <h4 class="mindy-refs-title">Expert References</h4>
+          <div id="blueprintRefsList"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
