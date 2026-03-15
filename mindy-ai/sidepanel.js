@@ -73,13 +73,16 @@ function appendAssistantLoadingPlaceholder(parentEl) {
   return div;
 }
 
-/** Converts AI response to HTML: **bold** and *italic* → formatted, no raw asterisks */
+/** Converts AI response to HTML: **bold**, *italic*, bullet * items → formatted, no raw asterisks */
 function formatAiResponse(text) {
   if (!text || typeof text !== 'string') return '';
   return text
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/^\s*\*\s+(.+)$/gm, '• $1')   // "* item" or "  * item" bullets
+    .replace(/^\s*-\s+(.+)$/gm, '• $1')    // "- item" bullets
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')  // *italic*
+    .replace(/\n\s*\*\s+/g, '\n• ')        // fallback: \n + * + space
     .replace(/\n/g, '<br>');
 }
 
@@ -461,22 +464,41 @@ function formatAiResponse(text) {
   return text
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/\n/g, '<br>');
+    .replace(/^\s*\*\s+(.+)$/gm, '• $1')
+    .replace(/^\s*\*\s*(.+)$/gm, '• $1')   // "*item" (no space) fallback
+    .replace(/^\s*-\s+(.+)$/gm, '• $1')
+    .replace(/^\s*-\s*(.+)$/gm, '• $1')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/\n\s*\*\s+/g, '\n• ')        // fallback: newline + * + space
+    .replace(/\n/g, '<br>')
+    .replace(/(<br>)\s*\*\s+/g, '$1• ');   // fallback: after <br>
 }
 
 // ---------- 4. Blueprint Vision (image → detailed guide) ----------
 function simpleMarkdownToHtml(md) {
   if (!md || typeof md !== 'string') return '';
-  return md
+  let out = md
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Bullet conversion: do BEFORE italic so * at line start is removed first
+  out = out.replace(/^(\s*)\*\s+(.+)$/gm, '$1• $2')   // "* item" or "  * item" — keep content
+    .replace(/^(\s*)\*\s*([^\s*].+)$/gm, '$1• $2')   // "*item" (no space after *) fallback
+    .replace(/^(\s*)-\s+(.+)$/gm, '$1• $2')            // "- item"
+    .replace(/^(\s*)-\s*([^\s-].+)$/gm, '$1• $2')     // "-item" fallback
+    .replace(/\n(\s*)\*\s+([^\n]+)/g, '\n$1• $2')    // after newline (one line only)
+    .replace(/\n(\s*)\*\s*([^\n\s*][^\n]*)/g, '\n$1• $2')  // "\n*item" (no space) fallback
+    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')  // *italic* mid-line
     .replace(/^### (.+)$/gm, '<h3 class="text-cyan-400 text-sm mt-3 mb-1">$1</h3>')
     .replace(/^## (.+)$/gm, '<h2 class="text-cyan-400 font-semibold mt-4 mb-2">$1</h2>')
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" class="text-cyan-400 hover:underline">$1</a>')
-    .replace(/^- (.+)$/gm, '<li class="ml-4">$1</li>')
-    .replace(/\n/g, '<br>');
+    .replace(/\n/g, '<br>')
+    .replace(/(<br>)(\s*)\*\s+/g, '$1$2• ')    // after <br>
+    .replace(/^(\s*)\*\s+/m, '$1• ')            // at very start
+    // Final pass: any line starting with * (bullet) → replace with •
+    .split('<br>')
+    .map(line => line.replace(/^(\s*)\*(\s*)/, '$1•$2'))
+    .join('<br>');
+  return out;
 }
 function escapeHtml(str) {
   const div = document.createElement('div');
